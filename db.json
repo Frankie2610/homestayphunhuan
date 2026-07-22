@@ -1,13 +1,13 @@
 {
   "homes": {
     "HOME1": {
-      "title": "3 Cây Non Home 1",
+      "title": "Homestay Phú Nhuận Home 1",
 
       "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176007/pyqyr1fakvnbv1bntku5.jpg",
 
       "description": "Không gian nghỉ dưỡng riêng tư với hồ bơi, sân vườn và khu BBQ.",
 
-      "location": "23/5/18 Lê Văn Duyệt, Gia Định, TP.HCM",
+      "location": "26/10 Lê Văn Sỹ, Quận Phú Nhuận, TP.HCM",
 
       "capacity": 15,
 
@@ -31,13 +31,13 @@
     },
 
     "HOME2": {
-      "title": "3 Cây Non Home 2",
+      "title": "Homestay Phú Nhuận Home 2",
 
       "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176875/weptcjsd9uytvwnuct0w.jpg",
 
       "description": "Home có sân vườn rộng, thích hợp tổ chức tiệc và họp mặt.",
 
-      "location": "23/5/18 Lê Văn Duyệt, Gia Định, TP.HCM",
+      "location": "26/10 Lê Văn Sỹ, Quận Phú Nhuận, TP.HCM",
 
       "capacity": 20,
 
@@ -55,7 +55,7 @@
     },
 
     "HOME3": {
-      "title": "3 Cây Non Home 3",
+      "title": "Homestay Phú Nhuận Home 3",
 
       "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176877/t21syhudhcbcxccnzprs.png",
 
@@ -79,7 +79,7 @@
     },
 
     "HOME4": {
-      "title": "3 Cây Non Home 4",
+      "title": "Homestay Phú Nhuận Home 4",
 
       "coverImage": "",
 
@@ -103,7 +103,7 @@
     },
 
     "HOME5": {
-      "title": "3 Cây Non Home 5",
+      "title": "Homestay Phú Nhuận Home 5",
 
       "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176878/moqhe3llskdch1fjiihn.png",
 
