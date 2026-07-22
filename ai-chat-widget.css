@@ -104,7 +104,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(390px, calc(100vw - 32px));
-  height: min(610px, calc(100dvh - 110px));
+  height: min(520px, calc(100dvh - 190px));
   overflow: hidden;
   border: 1px solid rgba(102, 73, 84, 0.12);
   border-radius: 24px;
@@ -382,6 +382,19 @@
   animation-delay: 0.28s;
 }
 
+.web-chat-typing-label {
+  display: none;
+  margin-left: 4px;
+  color: var(--web-chat-muted);
+  font-size: 10px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.web-chat-message.is-slow .web-chat-typing-label {
+  display: inline;
+}
+
 .web-chat-composer {
   border-top: 1px solid var(--web-chat-line);
   background: rgba(255, 255, 255, 0.97);
@@ -507,7 +520,7 @@
 
   .web-chat-panel {
     bottom: 68px;
-    height: min(590px, calc(100dvh - 170px));
+    height: min(540px, calc(100dvh - 190px));
   }
 }
 

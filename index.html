@@ -18616,7 +18616,7 @@
         }
     </style>
 
-    <link rel="stylesheet" href="/ai-chat-widget.css?v=20260722-1">
+    <link rel="stylesheet" href="/ai-chat-widget.css?v=20260722-3">
 </head>
 
 <body>
@@ -20051,8 +20051,8 @@
         <span id="liveActivityText"></span>
     </div>
     <!-- Website chatbot: dùng chung lõi hội thoại/Firebase với Messenger bot. -->
-    <div class="web-chat-widget" id="webChatWidget" data-api="/api/web-chat">
-        <button class="web-chat-launcher" type="button" data-chat-launcher aria-label="Mở chatbot HOME"
+    <div class="web-chat-widget" id="webChatWidget" data-api="/api/web-chat" data-timeout-ms="65000">
+        <button class="web-chat-launcher" type="button" data-chat-launcher aria-label="Mở chatbot Homestay Phú Nhuận"
             aria-controls="webChatPanel" aria-expanded="false">
             <span class="web-chat-launcher-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
@@ -20065,20 +20065,20 @@
                 </svg>
             </span>
             <span class="web-chat-launcher-copy">
-                <strong>Chat với HOME</strong>
+                <strong>Homestay Phú Nhuận</strong>
                 <small>Kiểm tra lịch &amp; giá tức thì</small>
             </span>
             <span class="web-chat-launcher-badge" data-chat-badge aria-hidden="true"></span>
         </button>
 
-        <section class="web-chat-panel" id="webChatPanel" data-chat-panel aria-label="Chat với HOME"
+        <section class="web-chat-panel" id="webChatPanel" data-chat-panel aria-label="Chat với Homestay Phú Nhuận"
             aria-hidden="true">
             <header class="web-chat-header">
                 <span class="web-chat-avatar" aria-hidden="true">
                     <img src="/logo3caynon.png" alt="" width="44" height="44">
                 </span>
                 <div class="web-chat-heading">
-                    <strong>HOME · Trợ lý 3 Cây Non</strong>
+                    <strong>Homestay Phú Nhuận</strong>
                     <span class="web-chat-status">Đang trực tuyến · Dữ liệu realtime</span>
                 </div>
                 <button class="web-chat-close" type="button" data-chat-close aria-label="Thu nhỏ chatbot">
@@ -31922,7 +31922,7 @@ Mình muốn đặt phòng homestay.
         })();
     </script>
 
-    <script src="/ai-chat-widget.js?v=20260722-1" defer></script>
+    <script src="/ai-chat-widget.js?v=20260722-3" defer></script>
 </body>
 
 </html>

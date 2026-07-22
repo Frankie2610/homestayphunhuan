@@ -14,6 +14,8 @@
   const sendButton = root.querySelector("[data-chat-send]");
   const liveRegion = root.querySelector("[data-chat-live]");
   const badge = root.querySelector("[data-chat-badge]");
+  const configuredTimeoutMs = Number(root.dataset.timeoutMs || 65_000);
+  const requestTimeoutMs = Math.min(120_000, Math.max(15_000, configuredTimeoutMs));
   const sessionKey = "h3cn_web_chat_session_v1";
   const historyKey = "h3cn_web_chat_history_v1";
   const maxHistory = 36;
@@ -235,7 +237,7 @@
 
   function showWelcome() {
     appendTextMessage({
-      text: "Chào bạn 🌿 Mình là HOME — trợ lý của 3 Cây Non. Mình có thể kiểm tra lịch trống, giá combo và tiện nghi trực tiếp từ hệ thống.",
+      text: "Chào bạn 🌿 Mình là trợ lý Homestay Phú Nhuận. Mình có thể kiểm tra lịch trống, giá combo và tiện nghi trực tiếp từ hệ thống.",
       quickReplies: [
         { title: "Kiểm tra lịch", payload: "START|AVAILABILITY" },
         { title: "Giá & combo", payload: "FAQ|PRICE" },
@@ -269,7 +271,12 @@
     typingEl = document.createElement("div");
     typingEl.className = "web-chat-message is-bot";
     typingEl.setAttribute("aria-label", "HOME đang trả lời");
-    typingEl.innerHTML = '<div class="web-chat-typing"><span></span><span></span><span></span></div>';
+    typingEl.innerHTML = `
+      <div class="web-chat-typing">
+        <span></span><span></span><span></span>
+        <small class="web-chat-typing-label">Đang kiểm tra dữ liệu...</small>
+      </div>
+    `;
     messagesEl.appendChild(typingEl);
     scrollToLatest();
   }
@@ -290,7 +297,17 @@
     showTyping();
 
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 28_000);
+    const startedAt = Date.now();
+    const slowHintTimeout = window.setTimeout(() => {
+      typingEl?.classList.add("is-slow");
+      liveRegion.textContent = "HOME vẫn đang kiểm tra dữ liệu.";
+    }, 10_000);
+    const timeout = window.setTimeout(() => {
+      const reason = typeof DOMException === "function"
+        ? new DOMException("chat_request_timeout", "TimeoutError")
+        : Object.assign(new Error("chat_request_timeout"), { name: "TimeoutError" });
+      controller.abort(reason);
+    }, requestTimeoutMs);
 
     try {
       const response = await fetch(apiUrl, {
@@ -327,19 +344,24 @@
       liveRegion.textContent = "HOME đã trả lời tin nhắn.";
     } catch (error) {
       hideTyping();
-      const timedOut = error?.name === "AbortError";
+      const timedOut = controller.signal.aborted
+        || error?.name === "AbortError"
+        || error?.name === "TimeoutError";
       appendTextMessage({
         text: timedOut
-          ? "Kết nối đang chậm hơn bình thường. Bạn thử gửi lại sau ít giây nhé."
+          ? "Hệ thống phản hồi quá thời gian chờ. Bạn thử gửi lại sau ít giây nhé."
           : (error?.message || "Chatbot đang kết nối lại. Bạn thử gửi lại hoặc nhắn Zalo giúp mình nhé.")
       }, { side: "bot" });
       liveRegion.textContent = "Không gửi được tin nhắn. Vui lòng thử lại.";
       console.error("Website AI chatbot request failed", {
         status: error?.status || 0,
-        message: error?.message || String(error)
+        code: timedOut ? "chat_request_timeout" : "chat_request_failed",
+        elapsedMs: Date.now() - startedAt,
+        message: timedOut ? "Request exceeded client timeout" : (error?.message || String(error))
       });
     } finally {
       window.clearTimeout(timeout);
+      window.clearTimeout(slowHintTimeout);
       hideTyping();
       setBusy(false);
       input.focus({ preventScroll: true });
