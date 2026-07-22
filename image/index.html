@@ -19320,7 +19320,13 @@ onclick="selectDate('${key}')"
         requestAnimationFrame(() => window.__customerRouter?.markInitialRouteState?.());
 
 
-        document.addEventListener("DOMContentLoaded", initPage);
+        // Firebase config được tải bằng top-level await. Nếu request hoàn tất sau
+        // DOMContentLoaded thì listener đăng ký muộn sẽ không bao giờ chạy.
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", initPage, { once: true });
+        } else {
+            initPage();
+        }
     </script>
     <div id="imgModal" class="image-modal" onclick="closeImg(event)">
 
