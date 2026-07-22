@@ -14,7 +14,7 @@
   const sendButton = root.querySelector("[data-chat-send]");
   const liveRegion = root.querySelector("[data-chat-live]");
   const badge = root.querySelector("[data-chat-badge]");
-  const configuredTimeoutMs = Number(root.dataset.timeoutMs || 65_000);
+  const configuredTimeoutMs = Number(root.dataset.timeoutMs || 25_000);
   const requestTimeoutMs = Math.min(120_000, Math.max(15_000, configuredTimeoutMs));
   const sessionKey = "h3cn_web_chat_session_v1";
   const historyKey = "h3cn_web_chat_history_v1";
@@ -286,6 +286,49 @@
     typingEl = null;
   }
 
+  async function consumeChatStream(response, onMessage) {
+    if (!response.body?.getReader) throw new Error("Trình duyệt không hỗ trợ nhận phản hồi trực tiếp.");
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let deliveredMessages = 0;
+    let doneEvent = null;
+
+    const consumeBlock = block => {
+      const data = block
+        .split("\n")
+        .filter(line => line.startsWith("data:"))
+        .map(line => line.slice(5).trimStart())
+        .join("\n");
+      if (!data) return;
+
+      const event = JSON.parse(data);
+      if (event.type === "message" && event.message) {
+        deliveredMessages += 1;
+        onMessage(event.message);
+      } else if (event.type === "done") {
+        doneEvent = event;
+      } else if (event.type === "error") {
+        const error = new Error(event.message || "Luồng chatbot bị gián đoạn.");
+        error.code = event.code || "chat_stream_error";
+        throw error;
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() || "";
+      blocks.forEach(consumeBlock);
+      if (done) break;
+    }
+    if (buffer.trim()) consumeBlock(buffer);
+
+    return { deliveredMessages, doneEvent };
+  }
+
   async function sendMessage({ message, payload = "", showUser = true }) {
     const cleanMessage = String(message || "").trim().slice(0, 800);
     if (busy || (!cleanMessage && !payload)) return;
@@ -298,6 +341,7 @@
 
     const controller = new AbortController();
     const startedAt = Date.now();
+    let deliveredMessages = 0;
     const slowHintTimeout = window.setTimeout(() => {
       typingEl?.classList.add("is-slow");
       liveRegion.textContent = "HOME vẫn đang kiểm tra dữ liệu.";
@@ -314,7 +358,7 @@
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "accept": "application/json"
+          "accept": "text/event-stream, application/json"
         },
         credentials: "same-origin",
         body: JSON.stringify({
@@ -325,19 +369,34 @@
         signal: controller.signal
       });
 
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.ok !== true) {
-        const error = new Error(data.message || "Không thể kết nối chatbot lúc này.");
-        error.status = response.status;
-        throw error;
+      const contentType = response.headers.get("content-type") || "";
+      if (response.ok && contentType.includes("text/event-stream")) {
+        const result = await consumeChatStream(response, serverMessage => {
+          deliveredMessages += 1;
+          hideTyping();
+          appendServerMessage(serverMessage);
+          liveRegion.textContent = "HOME vừa gửi câu trả lời.";
+        });
+        deliveredMessages = Math.max(deliveredMessages, result.deliveredMessages);
+      } else {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ok !== true) {
+          const error = new Error(data.message || "Không thể kết nối chatbot lúc này.");
+          error.status = response.status;
+          throw error;
+        }
+
+        const replies = Array.isArray(data.messages) ? data.messages : [];
+        replies.forEach(reply => {
+          deliveredMessages += 1;
+          hideTyping();
+          appendServerMessage(reply);
+        });
       }
 
       hideTyping();
-      const replies = Array.isArray(data.messages) ? data.messages : [];
-      if (!replies.length) {
+      if (!deliveredMessages) {
         appendTextMessage({ text: "Mình chưa nhận được câu trả lời. Bạn thử diễn đạt lại giúp mình nhé." }, { side: "bot" });
-      } else {
-        replies.forEach(appendServerMessage);
       }
 
       if (!root.classList.contains("is-open")) badge.classList.add("is-unread");
@@ -347,12 +406,14 @@
       const timedOut = controller.signal.aborted
         || error?.name === "AbortError"
         || error?.name === "TimeoutError";
-      appendTextMessage({
-        text: timedOut
-          ? "Hệ thống phản hồi quá thời gian chờ. Bạn thử gửi lại sau ít giây nhé."
-          : (error?.message || "Chatbot đang kết nối lại. Bạn thử gửi lại hoặc nhắn Zalo giúp mình nhé.")
-      }, { side: "bot" });
-      liveRegion.textContent = "Không gửi được tin nhắn. Vui lòng thử lại.";
+      if (!deliveredMessages) {
+        appendTextMessage({
+          text: timedOut
+            ? "Hệ thống phản hồi quá thời gian chờ. Bạn thử gửi lại sau ít giây nhé."
+            : (error?.message || "Chatbot đang kết nối lại. Bạn thử gửi lại hoặc nhắn Zalo giúp mình nhé.")
+        }, { side: "bot" });
+        liveRegion.textContent = "Không gửi được tin nhắn. Vui lòng thử lại.";
+      }
       console.error("Website AI chatbot request failed", {
         status: error?.status || 0,
         code: timedOut ? "chat_request_timeout" : "chat_request_failed",

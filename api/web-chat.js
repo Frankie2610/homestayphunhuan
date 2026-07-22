@@ -1,13 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import { handleConversationEvent } from "../lib/conversation.js";
-import { getAdminDatabase } from "../lib/firebase-admin.js";
 import { runWithWebMessengerCapture } from "../lib/messenger.js";
-import { logBotError, withConversationLock } from "../lib/conversation-store.js";
+import { logBotError } from "../lib/conversation-store.js";
 
 const MAX_BODY_BYTES = 16_000;
 const MAX_MESSAGE_LENGTH = 800;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX_REQUESTS = 40;
+const PROCESSING_TIMEOUT_MS = 18_000;
+const rateBuckets = new Map();
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -63,23 +65,195 @@ function getClientFingerprint(request, sessionId) {
     .slice(0, 32);
 }
 
-async function claimRateLimit(request, sessionId) {
+function pruneRateBuckets(now) {
+  if (rateBuckets.size < 2_000) return;
+  for (const [key, bucket] of rateBuckets) {
+    if (now - bucket.windowStartedAt >= RATE_WINDOW_MS) rateBuckets.delete(key);
+  }
+}
+
+function claimRateLimit(request, sessionId) {
   const key = getClientFingerprint(request, sessionId);
   const now = Date.now();
-  const ref = getAdminDatabase().ref(`messengerBot/webRateLimits/${key}`);
-  const result = await ref.transaction(current => {
-    const start = Number(current?.windowStartedAt || 0);
-    const expired = !start || now - start >= RATE_WINDOW_MS;
-    const count = expired ? 0 : Number(current?.count || 0);
-    if (count >= RATE_MAX_REQUESTS) return undefined;
-    return {
-      windowStartedAt: expired ? now : start,
-      count: count + 1,
-      updatedAt: now,
-      expiresAt: now + RATE_WINDOW_MS * 2
-    };
+  pruneRateBuckets(now);
+
+  const current = rateBuckets.get(key);
+  const expired = !current || now - current.windowStartedAt >= RATE_WINDOW_MS;
+  const bucket = expired
+    ? { windowStartedAt: now, count: 0 }
+    : current;
+
+  if (bucket.count >= RATE_MAX_REQUESTS) return false;
+  rateBuckets.set(key, { ...bucket, count: bucket.count + 1 });
+  return true;
+}
+
+function processingTimeout() {
+  return new Promise((_, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error("web_chat_processing_timeout");
+      error.code = "WEB_CHAT_PROCESSING_TIMEOUT";
+      reject(error);
+    }, PROCESSING_TIMEOUT_MS);
+    timer.unref?.();
   });
-  return result.committed;
+}
+
+function fallbackMessages(payload) {
+  if (payload === "START|AVAILABILITY") {
+    return [{
+      type: "text",
+      text: "Bạn muốn ở ngày nào?",
+      quickReplies: [
+        { title: "Hôm nay", payload: "DATE|TODAY" },
+        { title: "Ngày mai", payload: "DATE|TOMORROW" },
+        { title: "Ngày kia", payload: "DATE|DAY_AFTER" }
+      ]
+    }];
+  }
+
+  if (payload === "OPEN|GALLERY") {
+    return [{
+      type: "template",
+      text: "Bạn có thể xem hình các HOME tại thư viện ảnh.",
+      buttons: [{ type: "web_url", title: "Mở thư viện ảnh", url: "/hinh-anh" }]
+    }];
+  }
+
+  return [{
+    type: "text",
+    text: "Hệ thống dữ liệu đang phản hồi chậm. Bạn gửi giúp HOME ngày, giờ nhận phòng và số tiếng dự kiến; HOME sẽ thử kiểm tra lại ngay ở tin nhắn tiếp theo.",
+    quickReplies: [{ title: "Kiểm tra lại", payload: "START|AVAILABILITY" }]
+  }];
+}
+
+function reportProcessingError(psid, eventId, error, processingMs) {
+  const timedOut = error?.code === "WEB_CHAT_PROCESSING_TIMEOUT";
+  console.error("Website chatbot processing error", {
+    eventId,
+    processingMs,
+    timedOut,
+    error: error?.message || String(error)
+  });
+
+  // Error logging must never delay the browser response when Firebase itself
+  // is the slow dependency.
+  void logBotError(psid, {
+    eventId,
+    stage: "web_chat",
+    error: String(error?.message || error || "unknown_error").slice(0, 500)
+  }).catch(() => {});
+
+  return timedOut;
+}
+
+function streamEvent(controller, encoder, event) {
+  controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+}
+
+function scheduleBackgroundTask(task) {
+  try {
+    waitUntil(task);
+    return true;
+  } catch {
+    // Local Node tests do not have a Vercel request context. In that case the
+    // capture waits for the task normally instead of dropping it.
+    return false;
+  }
+}
+
+export function createStreamingResponse({
+  sessionId,
+  psid,
+  payload,
+  eventId,
+  startedAt = Date.now(),
+  processConversation
+}) {
+  const encoder = new TextEncoder();
+  let disconnected = false;
+  let deliveredMessages = 0;
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const sendEvent = event => {
+        if (disconnected) return;
+        try {
+          streamEvent(controller, encoder, event);
+        } catch {
+          disconnected = true;
+        }
+      };
+
+      // Flush the response headers immediately while Firebase/Gemini run.
+      sendEvent({ type: "ready", sessionId });
+
+      const processing = Promise.resolve().then(() => processConversation(message => {
+        deliveredMessages += 1;
+        sendEvent({ type: "message", message });
+      }));
+
+      void Promise.race([processing, processingTimeout()])
+        .then(() => {
+          const processingMs = Date.now() - startedAt;
+          console.info("Website chatbot stream completed", {
+            eventId,
+            processingMs,
+            deliveredMessages
+          });
+          sendEvent({
+            type: "done",
+            ok: true,
+            sessionId,
+            processingMs,
+            deliveredMessages
+          });
+        })
+        .catch(error => {
+          const processingMs = Date.now() - startedAt;
+          const timedOut = reportProcessingError(psid, eventId, error, processingMs);
+
+          // If a reply was already streamed, do not add a duplicate warning.
+          // Otherwise return a useful fallback before Vercel reaches its limit.
+          if (!deliveredMessages) {
+            for (const message of fallbackMessages(payload)) {
+              deliveredMessages += 1;
+              sendEvent({ type: "message", message });
+            }
+          }
+          sendEvent({
+            type: "done",
+            ok: true,
+            degraded: true,
+            timedOut,
+            sessionId,
+            processingMs,
+            deliveredMessages
+          });
+        })
+        .finally(() => {
+          if (disconnected) return;
+          try {
+            controller.close();
+          } catch {
+            disconnected = true;
+          }
+        });
+    },
+    cancel() {
+      disconnected = true;
+    }
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-store, no-transform",
+      "x-accel-buffering": "no",
+      "x-content-type-options": "nosniff"
+    }
+  });
 }
 
 export async function GET() {
@@ -87,6 +261,7 @@ export async function GET() {
     ok: true,
     channel: "website",
     firebase: true,
+    streaming: true,
     maxMessageLength: MAX_MESSAGE_LENGTH
   });
 }
@@ -128,19 +303,7 @@ export async function POST(request) {
     return json({ ok: false, error: "empty_message" }, 400);
   }
 
-  let rateAllowed = false;
-  try {
-    rateAllowed = await claimRateLimit(request, sessionId);
-  } catch (error) {
-    console.error("Website chatbot rate-limit check failed", {
-      error: error?.message || String(error)
-    });
-    return json({
-      ok: false,
-      error: "chat_service_unavailable",
-      message: "Chatbot đang kết nối lại. Bạn thử gửi lại sau ít giây nhé."
-    }, 503);
-  }
+  const rateAllowed = claimRateLimit(request, sessionId);
   if (!rateAllowed) {
     return json({
       ok: false,
@@ -151,35 +314,61 @@ export async function POST(request) {
 
   const psid = `web_${sessionId}`;
   const eventId = `web_${Date.now()}_${randomUUID()}`;
+  const startedAt = Date.now();
+
+  const processConversation = onMessage =>
+    runWithWebMessengerCapture(psid, () =>
+      handleConversationEvent({
+        psid,
+        text,
+        payload,
+        eventId,
+        attachmentType: ""
+      }),
+    {
+      onMessage,
+      onBackgroundTask: scheduleBackgroundTask
+    });
+
+  if (request.headers.get("accept")?.includes("text/event-stream")) {
+    return createStreamingResponse({
+      sessionId,
+      psid,
+      payload,
+      eventId,
+      startedAt,
+      processConversation
+    });
+  }
 
   try {
-    const capture = await withConversationLock(psid, () =>
-      runWithWebMessengerCapture(psid, () =>
-        handleConversationEvent({
-          psid,
-          text,
-          payload,
-          eventId,
-          attachmentType: ""
-        })
-      )
-    );
+    const capture = await Promise.race([
+      processConversation(),
+      processingTimeout()
+    ]);
+
+    const processingMs = Date.now() - startedAt;
+    console.info("Website chatbot request completed", { eventId, processingMs });
 
     return json({
       ok: true,
       sessionId,
+      processingMs,
       messages: capture.messages
-    });
+    }, 200, { "server-timing": `chat;dur=${processingMs}` });
   } catch (error) {
-    console.error("Website chatbot processing error", {
-      eventId,
-      error: error?.message || String(error)
-    });
-    await logBotError(psid, {
-      eventId,
-      stage: "web_chat",
-      error: String(error?.message || error || "unknown_error").slice(0, 500)
-    }).catch(() => {});
+    const processingMs = Date.now() - startedAt;
+    const timedOut = reportProcessingError(psid, eventId, error, processingMs);
+
+    if (timedOut) {
+      return json({
+        ok: true,
+        degraded: true,
+        sessionId,
+        processingMs,
+        messages: fallbackMessages(payload)
+      }, 200, { "server-timing": `chat;dur=${processingMs};desc=timeout` });
+    }
 
     return json({
       ok: false,

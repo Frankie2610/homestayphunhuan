@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GET, POST } from "../api/web-chat.js";
+import { GET, POST, createStreamingResponse } from "../api/web-chat.js";
 
 test("web chat health response is available without touching Firebase", async () => {
   const response = await GET();
@@ -8,6 +8,29 @@ test("web chat health response is available without touching Firebase", async ()
   assert.equal(response.status, 200);
   assert.equal(data.ok, true);
   assert.equal(data.channel, "website");
+  assert.equal(data.streaming, true);
+});
+
+test("web chat streaming sends ready, message and done events in order", async () => {
+  const response = createStreamingResponse({
+    sessionId: "1234567890abcdef",
+    psid: "web_1234567890abcdef",
+    payload: "",
+    eventId: "test_stream_success",
+    processConversation: async onMessage => {
+      onMessage({ type: "text", text: "Phản hồi trực tiếp" });
+    }
+  });
+  const body = await response.text();
+  const events = body
+    .split(/\r?\n\r?\n/)
+    .map(block => block.replace(/^data:\s*/, "").trim())
+    .filter(Boolean)
+    .map(value => JSON.parse(value));
+
+  assert.match(response.headers.get("content-type"), /^text\/event-stream/);
+  assert.deepEqual(events.map(event => event.type), ["ready", "message", "done"]);
+  assert.equal(events[1].message.text, "Phản hồi trực tiếp");
 });
 
 test("web chat rejects malformed sessions before database access", async () => {

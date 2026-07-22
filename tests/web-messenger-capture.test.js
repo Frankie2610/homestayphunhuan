@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  deferWebMessengerTask,
   runWithWebMessengerCapture,
   sendButtonTemplate,
   sendImages,
@@ -45,4 +46,41 @@ test("website capture converts templates and image groups", async () => {
     "https://example.com/1.jpg",
     "https://example.com/2.jpg"
   ]);
+});
+
+test("website capture streams each message as soon as it is sent", async () => {
+  const recipientId = "web_stream1234567890";
+  const streamed = [];
+  const captured = await runWithWebMessengerCapture(recipientId, async () => {
+    await sendText(recipientId, "Câu trả lời đầu tiên");
+    assert.equal(streamed.length, 1);
+    await sendText(recipientId, "Câu trả lời thứ hai");
+    assert.equal(streamed.length, 2);
+  }, {
+    onMessage: message => streamed.push(message)
+  });
+
+  assert.deepEqual(streamed, captured.messages);
+});
+
+test("scheduled website logs do not delay the captured response", async () => {
+  const recipientId = "web_background123456";
+  let releaseTask;
+  let scheduledTask = null;
+  const backgroundTask = new Promise(resolve => { releaseTask = resolve; });
+
+  const captured = await runWithWebMessengerCapture(recipientId, async () => {
+    assert.equal(deferWebMessengerTask(recipientId, backgroundTask), true);
+    await sendText(recipientId, "Trả lời không chờ log");
+  }, {
+    onBackgroundTask: task => {
+      scheduledTask = task;
+      return true;
+    }
+  });
+
+  assert.equal(captured.messages[0].text, "Trả lời không chờ log");
+  assert.ok(scheduledTask);
+  releaseTask();
+  await scheduledTask;
 });
