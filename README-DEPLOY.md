@@ -86,3 +86,25 @@ Trên Vercel đặt:
 - `WEB_CHAT_ALLOWED_ORIGINS=https://homestayphunhuan.vercel.app`
 - `GEMINI_ENABLED=true`
 - `WEB_CHAT_GEMINI_REWRITE=true`
+
+
+## Security patch v4
+
+Firebase Web API key is no longer hardcoded in HTML. Configure these Vercel Environment Variables:
+
+```env
+PUBLIC_FIREBASE_API_KEY=...
+PUBLIC_FIREBASE_AUTH_DOMAIN=homestay3caynon-e00de.firebaseapp.com
+PUBLIC_FIREBASE_DATABASE_URL=https://homestay3caynon-e00de-default-rtdb.firebaseio.com
+PUBLIC_FIREBASE_PROJECT_ID=homestay3caynon-e00de
+PUBLIC_FIREBASE_STORAGE_BUCKET=homestay3caynon-e00de.firebasestorage.app
+BOT_HEALTH_SECRET=create-a-long-random-value
+```
+
+After redeploy, test Firebase Admin securely:
+
+```text
+https://homestayphunhuan.vercel.app/api/chatbot-health?secret=YOUR_BOT_HEALTH_SECRET
+```
+
+The public Firebase API key is delivered to the browser by `/api/public-config`; it must be restricted in Google Cloud to the required Firebase APIs and approved HTTP referrers. Gemini and Firebase Admin credentials must exist only in Vercel Environment Variables.
