@@ -108,3 +108,22 @@ https://homestayphunhuan.vercel.app/api/chatbot-health?secret=YOUR_BOT_HEALTH_SE
 ```
 
 The public Firebase API key is delivered to the browser by `/api/public-config`; it must be restricted in Google Cloud to the required Firebase APIs and approved HTTP referrers. Gemini and Firebase Admin credentials must exist only in Vercel Environment Variables.
+
+## Chẩn đoán lỗi 504 Firebase
+
+Bản v5 giới hạn health check Firebase trong khoảng 4,5 giây, nên endpoint sẽ trả JSON chẩn đoán thay vì để Vercel treo đến `FUNCTION_INVOCATION_TIMEOUT`.
+
+Khuyến nghị dùng một biến service account JSON thay vì ba biến tách rời:
+
+1. Tải service account JSON từ Firebase Console > Project settings > Service accounts.
+2. Trên PowerShell, không in nội dung key ra màn hình; sao chép JSON nén vào clipboard bằng:
+
+```powershell
+(Get-Content ".\\service-account.json" -Raw | ConvertFrom-Json | ConvertTo-Json -Compress) | Set-Clipboard
+```
+
+3. Trên Vercel tạo `FIREBASE_SERVICE_ACCOUNT_JSON` và dán từ clipboard.
+4. `FIREBASE_DATABASE_URL` phải được sao chép chính xác từ Firebase Console > Realtime Database.
+5. Redeploy sau khi đổi Environment Variables.
+
+Không commit service-account JSON, `.env.local`, Gemini key hoặc private key lên GitHub.

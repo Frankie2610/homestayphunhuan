@@ -65,7 +65,7 @@
       "maxDuration": 10
     },
     "api/chatbot-health.js": {
-      "maxDuration": 10
+      "maxDuration": 15
     },
     "api/chatbot-debug-availability.js": {
       "maxDuration": 10
