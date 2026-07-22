@@ -1,22 +1,19 @@
 {
-  "name": "homestay-phu-nhuan-fullstack",
-  "version": "2.4.0",
+  "name": "homestay-3-cay-non-messenger-bot",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "dev": "node server.mjs",
-    "test": "node --test tests/*.test.js",
-    "check": "node --check api/public-config.js && node --check api/meta-webhook.js && node --check api/web-chat.js && node --check api/chatbot-health.js && node --check api/chatbot-debug-availability.js && node --check api/chatbot-test-alert.js && node --check lib/conversation.js && node --check lib/availability.js && node --check lib/pricing.js && node --check lib/date-time.js && node --check lib/conversation-store.js && node --check lib/conversation-control.js && node --check lib/messenger.js && node --check lib/owner-notifier.js && node --check assets/ai-chat-widget.js",
-    "start": "node server.mjs",
-    "dev:vercel": "vercel dev --listen 3000"
+    "test": "node --test",
+    "check": "node --check api/web-chat.js && node --check lib/messenger.js && node --check ai-chat-widget.js"
   },
   "dependencies": {
-    "@google/genai": "^2.11.0",
-    "@vercel/functions": "^3.7.5",
-    "firebase-admin": "^14.1.0",
-    "luxon": "^3.7.2"
+    "@google/genai": "2.11.0",
+    "@vercel/functions": "3.7.5",
+    "firebase-admin": "14.1.0",
+    "luxon": "3.7.2"
   }
 }

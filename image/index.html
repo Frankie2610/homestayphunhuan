@@ -33,7 +33,7 @@
     <meta name="description"
         content="Homestay 3 Cây Non tại Bình Thạnh, gần Quận 1 và cầu Bông. Homestay nghỉ dưỡng riêng tư cho cặp đôi tại TP.HCM với Netflix, máy chiếu, TV 55 inch, bồn tắm riêng và check-in linh hoạt.">
 
-    <link rel="canonical" href="https://homestayphunhuan.vercel.app/">
+    <link rel="canonical" href="https://homestay3caynon.vercel.app/">
 
     <!-- Open Graph -->
 
@@ -48,9 +48,9 @@
     <meta property="og:description"
         content="Homestay 3 Cây Non tại Bình Thạnh, gần Quận 1 và chân cầu Bông. Netflix, máy chiếu, TV 55 inch, bồn tắm riêng và không gian nghỉ dưỡng riêng tư tại TP.HCM.">
 
-    <meta property="og:url" content="https://homestayphunhuan.vercel.app/">
+    <meta property="og:url" content="https://homestay3caynon.vercel.app/">
 
-    <meta property="og:image" content="https://homestayphunhuan.vercel.app/cover.jpg">
+    <meta property="og:image" content="https://homestay3caynon.vercel.app/cover.jpg">
 
     <meta property="og:image:width" content="1200">
 
@@ -66,7 +66,7 @@
 
     <meta name="twitter:description" content="Homestay 3 Cây Non tại Bình Thạnh, gần Quận 1 và cầu Bông.">
 
-    <meta name="twitter:image" content="https://homestayphunhuan.vercel.app/cover.jpg">
+    <meta name="twitter:image" content="https://homestay3caynon.vercel.app/cover.jpg">
 
     <!-- GEO -->
 
@@ -85,8 +85,8 @@
   "@context": "https://schema.org",
   "@type": "LodgingBusiness",
   "name": "Homestay 3 Cây Non",
-  "url": "https://homestayphunhuan.vercel.app/",
-  "image": "https://homestayphunhuan.vercel.app/cover.jpg",
+  "url": "https://homestay3caynon.vercel.app/",
+  "image": "https://homestay3caynon.vercel.app/cover.jpg",
   "telephone": "+84902932808",
 
   "address": {
@@ -11498,13 +11498,14 @@
             runTransaction
         } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
 
-        const firebaseConfigResponse = await fetch("/api/public-config", {
-            headers: { "accept": "application/json" }
-        });
-        if (!firebaseConfigResponse.ok) {
-            throw new Error(`Không tải được Firebase public config (${firebaseConfigResponse.status})`);
-        }
-        const firebaseConfig = await firebaseConfigResponse.json();
+        const firebaseConfig = {
+            apiKey: "AIzaSyCH-D5mOViT1gVbL80hYmGigf3gdQ8neZg",
+            authDomain: "homestay3caynon-e00de.firebaseapp.com",
+            databaseURL: "https://homestay3caynon-e00de-default-rtdb.firebaseio.com",
+            projectId: "homestay3caynon-e00de",
+            storageBucket: "homestay3caynon-e00de.firebasestorage.app"
+        };
+
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 

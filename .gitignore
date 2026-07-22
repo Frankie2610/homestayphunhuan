@@ -1,8 +1,11 @@
 node_modules/
-.vercel/
 .env
 .env.*
-!.env.example
+.vercel/
 npm-debug.log*
-.DS_Store
-Thumbs.db
+.vercel
+.env*
+
+lib/*.before-*.js
+
+lib/*.before-*.js

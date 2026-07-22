@@ -1,75 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { handleConversationEvent } from "../lib/conversation.js";
-import {
-  logBotError
-} from "../lib/conversation-store.js";
-import { captureWebsiteDelivery } from "../lib/messenger.js";
-import { config } from "../lib/config.js";
+import { getAdminDatabase } from "../lib/firebase-admin.js";
+import { runWithWebMessengerCapture } from "../lib/messenger.js";
+import { logBotError, withConversationLock } from "../lib/conversation-store.js";
 
-const RATE_WINDOW_MS = 60_000;
-const RATE_LIMIT = 18;
-const requestBuckets = new Map();
-
-const WEB_CHAT_PROCESSING_TIMEOUT_MS = Math.max(10_000, Number(process.env.WEB_CHAT_PROCESSING_TIMEOUT_MS || 20_000));
-const websiteLocks = new Map();
-
-function timeoutError(label, ms) {
-  const error = new Error(`${label}_timeout_after_${ms}ms`);
-  error.code = "WEB_CHAT_TIMEOUT";
-  return error;
-}
-
-function withDeadline(promise, ms, label = "web_chat") {
-  let timer;
-  const deadline = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(timeoutError(label, ms)), ms);
-    timer.unref?.();
-  });
-  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
-}
-
-/**
- * Website widget already serializes sends in the browser. An in-process lock is
- * enough here and avoids two extra Firebase transactions per message. Messenger
- * keeps using the distributed Firebase lock in its own webhook path.
- */
-async function withWebsiteLock(sessionId, handler) {
-  const previous = websiteLocks.get(sessionId) || Promise.resolve();
-  let release;
-  const gate = new Promise(resolve => { release = resolve; });
-  const queued = previous.catch(() => {}).then(() => gate);
-  websiteLocks.set(sessionId, queued);
-
-  await previous.catch(() => {});
-  try {
-    return await handler();
-  } finally {
-    release();
-    if (websiteLocks.get(sessionId) === queued) websiteLocks.delete(sessionId);
-  }
-}
-
-const REQUIRED_FIREBASE_ENV = [
-  "FIREBASE_PROJECT_ID",
-  "FIREBASE_CLIENT_EMAIL",
-  "FIREBASE_PRIVATE_KEY"
-];
-
-function missingWebChatEnv() {
-  const missing = [];
-  if (!String(process.env.FIREBASE_DATABASE_URL || "").trim()) {
-    missing.push("FIREBASE_DATABASE_URL");
-  }
-
-  const serviceAccountJson = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
-  if (!serviceAccountJson) {
-    missing.push(...REQUIRED_FIREBASE_ENV.filter(
-      name => !String(process.env[name] || "").trim()
-    ));
-  }
-
-  return missing;
-}
+const MAX_BODY_BYTES = 16_000;
+const MAX_MESSAGE_LENGTH = 800;
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_MAX_REQUESTS = 40;
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -77,320 +15,176 @@ function json(data, status = 200, extraHeaders = {}) {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
       ...extraHeaders
     }
   });
 }
 
-function normalizeOrigin(value) {
+function isAllowedOrigin(request) {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+
   try {
-    return new URL(String(value || "")).origin;
-  } catch {
-    return "";
-  }
-}
+    const originUrl = new URL(origin);
+    const requestUrl = new URL(request.url);
+    if (originUrl.host === requestUrl.host) return true;
 
-function allowedOrigins(request) {
-  const values = new Set();
-  const requestOrigin = normalizeOrigin(request.url);
-  if (requestOrigin) values.add(requestOrigin);
-
-  const forwardedHost = String(request.headers.get("x-forwarded-host") || "").trim();
-  const forwardedProto = String(request.headers.get("x-forwarded-proto") || "https").trim();
-  if (forwardedHost) values.add(`${forwardedProto}://${forwardedHost}`);
-
-  for (const item of String(process.env.WEB_CHAT_ALLOWED_ORIGINS || "").split(",")) {
-    const origin = normalizeOrigin(item.trim());
-    if (origin) values.add(origin);
-  }
-
-  values.add("http://localhost:3000");
-  values.add("http://localhost:5173");
-  values.add("http://127.0.0.1:3000");
-  values.add("http://127.0.0.1:5173");
-  return values;
-}
-
-
-function isLocalDevelopmentOrigin(value) {
-  try {
-    const url = new URL(String(value || ""));
-    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    const configuredHost = process.env.PUBLIC_SITE_URL
+      ? new URL(process.env.PUBLIC_SITE_URL).host
+      : "";
+    return Boolean(configuredHost && originUrl.host === configuredHost);
   } catch {
     return false;
   }
 }
 
-function corsHeaders(request) {
-  const origin = normalizeOrigin(request.headers.get("origin"));
-  if (!origin) return {};
-  if (!allowedOrigins(request).has(origin) && !isLocalDevelopmentOrigin(origin)) return null;
-  return {
-    "access-control-allow-origin": origin,
-    "access-control-allow-methods": "POST, OPTIONS",
-    "access-control-allow-headers": "content-type",
-    "access-control-max-age": "86400",
-    vary: "Origin"
-  };
-}
-
-function clientIp(request) {
-  return String(
-    request.headers.get("x-real-ip")
-      || request.headers.get("x-forwarded-for")
-      || "unknown"
-  ).split(",")[0].trim().slice(0, 80);
-}
-
-function rateLimitKey(request, sessionId) {
-  return `${clientIp(request)}:${sessionId}`;
-}
-
-function consumeRateLimit(request, sessionId) {
-  const now = Date.now();
-  const key = rateLimitKey(request, sessionId);
-  const current = requestBuckets.get(key);
-
-  if (!current || now >= current.resetAt) {
-    requestBuckets.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return { allowed: true, retryAfter: 0 };
-  }
-
-  current.count += 1;
-  if (current.count <= RATE_LIMIT) {
-    return { allowed: true, retryAfter: 0 };
-  }
-
-  return {
-    allowed: false,
-    retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000))
-  };
-}
-
-function safeToken(value, maxLength = 100) {
-  return String(value || "")
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]/g, "")
-    .slice(0, maxLength);
-}
-
-function normalizeSessionId(value) {
-  const raw = safeToken(value, 96).replace(/^web_+/i, "");
-  if (raw.length < 8) return "";
-  return `web_${raw}`;
-}
-
-function normalizeMessage(value) {
-  return String(value || "").replace(/\u0000/g, "").trim().slice(0, 1200);
+function validSessionId(value) {
+  return /^[a-zA-Z0-9_-]{16,96}$/.test(String(value || ""));
 }
 
 function normalizePayload(value) {
-  return String(value || "").replace(/\u0000/g, "").trim().slice(0, 1000);
+  const payload = String(value || "").trim();
+  if (!payload) return "";
+  if (payload.length > 1000 || !/^[\p{L}\p{N}\s_|:.\/-]+$/u.test(payload)) {
+    throw new Error("invalid_payload");
+  }
+  return payload;
 }
 
-function normalizeOutput(messages = []) {
-  return (Array.isArray(messages) ? messages : [])
-    .filter(item => item && typeof item === "object")
-    .slice(0, 12)
-    .map(item => {
-      if (item.type === "images") {
-        return {
-          id: String(item.id || ""),
-          type: "images",
-          imageUrls: (Array.isArray(item.imageUrls) ? item.imageUrls : [])
-            .map(url => String(url || "").trim())
-            .filter(url => /^https:\/\//i.test(url))
-            .slice(0, 4),
-          createdAt: Number(item.createdAt || Date.now())
-        };
-      }
-
-      if (item.type === "button_template") {
-        return {
-          id: String(item.id || ""),
-          type: "button_template",
-          text: String(item.text || "").slice(0, 4000),
-          buttons: (Array.isArray(item.buttons) ? item.buttons : []).slice(0, 3).map(button => ({
-            type: button?.type === "postback" ? "postback" : "web_url",
-            title: String(button?.title || "").slice(0, 40),
-            payload: String(button?.payload || "").slice(0, 1000),
-            url: /^https:\/\//i.test(String(button?.url || ""))
-              ? String(button.url)
-              : ""
-          })),
-          createdAt: Number(item.createdAt || Date.now())
-        };
-      }
-
-      return {
-        id: String(item.id || ""),
-        type: "text",
-        text: String(item.text || "").slice(0, 4000),
-        quickReplies: (Array.isArray(item.quickReplies) ? item.quickReplies : [])
-          .slice(0, 13)
-          .map(reply => ({
-            title: String(reply?.title || "").slice(0, 40),
-            payload: String(reply?.payload || reply?.title || "").slice(0, 1000)
-          })),
-        createdAt: Number(item.createdAt || Date.now())
-      };
-    });
+function getClientFingerprint(request, sessionId) {
+  const forwarded = request.headers.get("x-forwarded-for") || "";
+  const ip = forwarded.split(",")[0].trim()
+    || request.headers.get("x-real-ip")
+    || "unknown";
+  return createHash("sha256")
+    .update(`${ip}|${sessionId}`)
+    .digest("hex")
+    .slice(0, 32);
 }
 
-export async function GET(request) {
-  const headers = corsHeaders(request);
-  if (headers === null) return json({ ok: false, error: "origin_not_allowed" }, 403);
-  const missing = missingWebChatEnv();
+async function claimRateLimit(request, sessionId) {
+  const key = getClientFingerprint(request, sessionId);
+  const now = Date.now();
+  const ref = getAdminDatabase().ref(`messengerBot/webRateLimits/${key}`);
+  const result = await ref.transaction(current => {
+    const start = Number(current?.windowStartedAt || 0);
+    const expired = !start || now - start >= RATE_WINDOW_MS;
+    const count = expired ? 0 : Number(current?.count || 0);
+    if (count >= RATE_MAX_REQUESTS) return undefined;
+    return {
+      windowStartedAt: expired ? now : start,
+      count: count + 1,
+      updatedAt: now,
+      expiresAt: now + RATE_WINDOW_MS * 2
+    };
+  });
+  return result.committed;
+}
+
+export async function GET() {
   return json({
     ok: true,
-    service: "website-ai-chat",
-    brand: "Homestay Quận Phú Nhuận",
-    configured: missing.length === 0,
-    fastMode: config.webChatFastMode,
-    geminiRewrite: config.webChatGeminiRewrite,
-    missing,
-    time: new Date().toISOString()
-  }, 200, headers);
-}
-
-export async function OPTIONS(request) {
-  const headers = corsHeaders(request);
-  if (headers === null) return json({ ok: false, error: "origin_not_allowed" }, 403);
-  return new Response(null, { status: 204, headers });
+    channel: "website",
+    firebase: true,
+    maxMessageLength: MAX_MESSAGE_LENGTH
+  });
 }
 
 export async function POST(request) {
-  const headers = corsHeaders(request);
-  if (headers === null) {
+  if (!isAllowedOrigin(request)) {
     return json({ ok: false, error: "origin_not_allowed" }, 403);
   }
 
   const contentLength = Number(request.headers.get("content-length") || 0);
-  if (contentLength > 16_000) {
-    return json({ ok: false, error: "request_too_large" }, 413, headers);
+  if (contentLength > MAX_BODY_BYTES) {
+    return json({ ok: false, error: "request_too_large" }, 413);
   }
 
   let body;
   try {
-    body = await request.json();
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
+      return json({ ok: false, error: "request_too_large" }, 413);
+    }
+    body = JSON.parse(rawBody);
   } catch {
-    return json({ ok: false, error: "invalid_json" }, 400, headers);
+    return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const psid = normalizeSessionId(body?.sessionId);
-  const message = normalizeMessage(body?.message);
-  const payload = normalizePayload(body?.payload);
-  const clientMessageId = safeToken(body?.clientMessageId, 100) || randomUUID();
-
-  if (!psid) {
-    return json({ ok: false, error: "invalid_session" }, 400, headers);
-  }
-  if (!message && !payload) {
-    return json({ ok: false, error: "empty_message" }, 400, headers);
+  const sessionId = String(body?.sessionId || "").trim();
+  const text = String(body?.message || "").trim().slice(0, MAX_MESSAGE_LENGTH);
+  let payload = "";
+  try {
+    payload = normalizePayload(body?.payload);
+  } catch {
+    return json({ ok: false, error: "invalid_payload" }, 400);
   }
 
-  const missing = missingWebChatEnv();
-  if (missing.length) {
+  if (!validSessionId(sessionId)) {
+    return json({ ok: false, error: "invalid_session" }, 400);
+  }
+  if (!text && !payload) {
+    return json({ ok: false, error: "empty_message" }, 400);
+  }
+
+  let rateAllowed = false;
+  try {
+    rateAllowed = await claimRateLimit(request, sessionId);
+  } catch (error) {
+    console.error("Website chatbot rate-limit check failed", {
+      error: error?.message || String(error)
+    });
     return json({
       ok: false,
-      error: "server_configuration_missing",
-      missing,
-      message: "Chatbot chưa được kết nối Firebase ở môi trường hiện tại."
-    }, 503, headers);
+      error: "chat_service_unavailable",
+      message: "Chatbot đang kết nối lại. Bạn thử gửi lại sau ít giây nhé."
+    }, 503);
+  }
+  if (!rateAllowed) {
+    return json({
+      ok: false,
+      error: "rate_limited",
+      message: "Bạn gửi hơi nhanh. Vui lòng chờ một chút rồi thử lại nhé."
+    }, 429, { "retry-after": "30" });
   }
 
-  const rate = consumeRateLimit(request, psid);
-  if (!rate.allowed) {
-    return json(
-      { ok: false, error: "rate_limited", retryAfter: rate.retryAfter },
-      429,
-      { ...headers, "retry-after": String(rate.retryAfter) }
-    );
-  }
-
-  const eventId = `web_${clientMessageId}`;
+  const psid = `web_${sessionId}`;
+  const eventId = `web_${Date.now()}_${randomUUID()}`;
 
   try {
-    const startedAt = Date.now();
-    const delivery = await withDeadline(
-      captureWebsiteDelivery(psid, () =>
-        withWebsiteLock(psid, () =>
-          handleConversationEvent({
-            psid,
-            text: message,
-            payload,
-            eventId,
-            attachmentType: ""
-          })
-        )
-      ),
-      WEB_CHAT_PROCESSING_TIMEOUT_MS,
-      "web_chat_processing"
+    const capture = await withConversationLock(psid, () =>
+      runWithWebMessengerCapture(psid, () =>
+        handleConversationEvent({
+          psid,
+          text,
+          payload,
+          eventId,
+          attachmentType: ""
+        })
+      )
     );
-    const processingMs = Date.now() - startedAt;
-
-    const messages = normalizeOutput(delivery.messages);
-    if (!messages.length) {
-      messages.push({
-        id: `web_fallback_${Date.now()}`,
-        type: "text",
-        text: "Mình chưa nhận diện được yêu cầu. Bạn thử gửi ngày, giờ và số tiếng muốn ở nhé.",
-        quickReplies: [
-          { title: "Kiểm tra lịch", payload: "START|AVAILABILITY" },
-          { title: "Giá & combo", payload: "FAQ|PRICE" },
-          { title: "Gặp nhân viên", payload: "HUMAN|REQUEST" }
-        ],
-        createdAt: Date.now()
-      });
-    }
-
-    console.log("Website chatbot response", {
-      psid: psid.slice(-12),
-      processingMs,
-      messageCount: messages.length
-    });
 
     return json({
       ok: true,
-      sessionId: psid,
-      messages,
-      processingMs,
-      fastMode: config.webChatFastMode
-    }, 200, headers);
+      sessionId,
+      messages: capture.messages
+    });
   } catch (error) {
     console.error("Website chatbot processing error", {
-      psid,
       eventId,
-      error: String(error?.message || error || "unknown_error")
+      error: error?.message || String(error)
     });
-
-    // Never await an error log here. If Firebase is the stalled dependency,
-    // awaiting the log would make the timeout handler stall a second time and
-    // the browser would abort with DOMException code 23.
-    logBotError(psid, {
+    await logBotError(psid, {
       eventId,
       stage: "web_chat",
       error: String(error?.message || error || "unknown_error").slice(0, 500)
     }).catch(() => {});
 
-    const rawError = String(error?.message || error || "unknown_error");
-    const errorCode = rawError.includes("Thiếu biến môi trường")
-      ? "server_configuration_missing"
-      : error?.code === "WEB_CHAT_TIMEOUT" || rawError.includes("web_chat_processing_timeout")
-        ? "chat_processing_timeout"
-        : rawError.includes("conversation_busy")
-          ? "conversation_busy"
-          : "chat_processing_failed";
-
-    const status = errorCode === "chat_processing_timeout" ? 504 : 500;
     return json({
       ok: false,
-      error: errorCode,
-      message: errorCode === "server_configuration_missing"
-        ? "Backend chatbot chưa có đủ biến môi trường Firebase. Hãy kiểm tra file .env.local hoặc cấu hình môi trường đang chạy."
-        : errorCode === "chat_processing_timeout"
-          ? "Backend xử lý quá thời gian. Hãy kiểm tra kết nối Firebase/Gemini trong terminal local."
-          : "Chatbot đang kết nối lại. Bạn thử gửi lại sau ít giây hoặc nhắn trực tiếp giúp mình nhé."
-    }, status, headers);
+      error: "chat_processing_failed",
+      message: "Chatbot đang kết nối lại. Bạn thử gửi lại sau ít giây hoặc nhắn trực tiếp giúp mình nhé."
+    }, 500);
   }
 }

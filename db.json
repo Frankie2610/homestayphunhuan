@@ -1,0 +1,129 @@
+{
+  "homes": {
+    "HOME1": {
+      "title": "3 Cây Non Home 1",
+
+      "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176007/pyqyr1fakvnbv1bntku5.jpg",
+
+      "description": "Không gian nghỉ dưỡng riêng tư với hồ bơi, sân vườn và khu BBQ.",
+
+      "location": "23/5/18 Lê Văn Duyệt, Gia Định, TP.HCM",
+
+      "capacity": 15,
+
+      "prices": {
+        "4h": 600000,
+        "7h": 900000,
+        "9h": 1200000,
+        "12h": 1500000,
+        "14h": 1700000,
+        "22h": 2200000,
+        "extraHour": 100000
+      },
+
+      "images": [
+        "https://res.cloudinary.com/dqketsajz/image/upload/home1-1.jpg",
+        "https://res.cloudinary.com/dqketsajz/image/upload/home1-2.jpg",
+        "https://res.cloudinary.com/dqketsajz/image/upload/home1-3.jpg",
+        "https://res.cloudinary.com/dqketsajz/image/upload/home1-4.jpg",
+        "https://res.cloudinary.com/dqketsajz/image/upload/home1-5.jpg"
+      ]
+    },
+
+    "HOME2": {
+      "title": "3 Cây Non Home 2",
+
+      "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176875/weptcjsd9uytvwnuct0w.jpg",
+
+      "description": "Home có sân vườn rộng, thích hợp tổ chức tiệc và họp mặt.",
+
+      "location": "23/5/18 Lê Văn Duyệt, Gia Định, TP.HCM",
+
+      "capacity": 20,
+
+      "prices": {
+        "4h": 650000,
+        "7h": 950000,
+        "9h": 1250000,
+        "12h": 1550000,
+        "14h": 1750000,
+        "22h": 2250000,
+        "extraHour": 100000
+      },
+
+      "images": []
+    },
+
+    "HOME3": {
+      "title": "3 Cây Non Home 3",
+
+      "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176877/t21syhudhcbcxccnzprs.png",
+
+      "description": "",
+
+      "location": "",
+
+      "capacity": 15,
+
+      "prices": {
+        "4h": 0,
+        "7h": 0,
+        "9h": 0,
+        "12h": 0,
+        "14h": 0,
+        "22h": 0,
+        "extraHour": 0
+      },
+
+      "images": []
+    },
+
+    "HOME4": {
+      "title": "3 Cây Non Home 4",
+
+      "coverImage": "",
+
+      "description": "",
+
+      "location": "",
+
+      "capacity": 15,
+
+      "prices": {
+        "4h": 0,
+        "7h": 0,
+        "9h": 0,
+        "12h": 0,
+        "14h": 0,
+        "22h": 0,
+        "extraHour": 0
+      },
+
+      "images": []
+    },
+
+    "HOME5": {
+      "title": "3 Cây Non Home 5",
+
+      "coverImage": "https://res.cloudinary.com/dqketsajz/image/upload/v1780176878/moqhe3llskdch1fjiihn.png",
+
+      "description": "",
+
+      "location": "",
+
+      "capacity": 15,
+
+      "prices": {
+        "4h": 0,
+        "7h": 0,
+        "9h": 0,
+        "12h": 0,
+        "14h": 0,
+        "22h": 0,
+        "extraHour": 0
+      },
+
+      "images": []
+    }
+  }
+}
