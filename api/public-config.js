@@ -13,13 +13,13 @@ function value(name, fallback = "") {
 }
 
 export async function GET() {
-  const projectId = value("PUBLIC_FIREBASE_PROJECT_ID", process.env.FIREBASE_PROJECT_ID);
+  const projectId = value("FIREBASE_PROJECT_ID", process.env.FIREBASE_PROJECT_ID);
   const config = {
-    apiKey: value("PUBLIC_FIREBASE_API_KEY"),
-    authDomain: value("PUBLIC_FIREBASE_AUTH_DOMAIN", projectId ? `${projectId}.firebaseapp.com` : ""),
-    databaseURL: value("PUBLIC_FIREBASE_DATABASE_URL", process.env.FIREBASE_DATABASE_URL),
+    apiKey: value("FIREBASE_API_KEY"),
+    authDomain: value("FIREBASE_AUTH_DOMAIN", projectId ? `${projectId}.firebaseapp.com` : ""),
+    databaseURL: value("FIREBASE_DATABASE_URL", process.env.FIREBASE_DATABASE_URL),
     projectId,
-    storageBucket: value("PUBLIC_FIREBASE_STORAGE_BUCKET", projectId ? `${projectId}.firebasestorage.app` : "")
+    storageBucket: value("FIREBASE_STORAGE_BUCKET", projectId ? `${projectId}.firebasestorage.app` : "")
   };
 
   const missing = Object.entries(config)
