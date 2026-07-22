@@ -237,7 +237,7 @@
 
   function showWelcome() {
     appendTextMessage({
-      text: "Chào bạn 🌿 Mình là trợ lý Homestay Phú Nhuận. Mình có thể kiểm tra lịch trống, giá combo và tiện nghi trực tiếp từ hệ thống.",
+      text: "Chào bạn 🌿 Mình là trợ lý ảo Homestay Phú Nhuận. Mình có thể kiểm tra lịch trống, giá combo và tiện nghi trực tiếp từ hệ thống.",
       quickReplies: [
         { title: "Kiểm tra lịch", payload: "START|AVAILABILITY" },
         { title: "Giá & combo", payload: "FAQ|PRICE" },
