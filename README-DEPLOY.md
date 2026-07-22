@@ -127,3 +127,20 @@ Khuyến nghị dùng một biến service account JSON thay vì ba biến tách
 5. Redeploy sau khi đổi Environment Variables.
 
 Không commit service-account JSON, `.env.local`, Gemini key hoặc private key lên GitHub.
+
+## Kiểm tra dữ liệu HOME sau khi deploy
+
+Mở lần lượt:
+
+1. `https://homestayphunhuan.vercel.app/api/public-config`
+2. `https://homestayphunhuan.vercel.app/firebase-debug.html`
+
+Trang debug chỉ đọc node `/homes`, không ghi dữ liệu và không có HOME fix cứng.
+Trang chủ render card ngay sau khi `/homes` tải xong; dữ liệu `bookingsByMonth` chỉ cập nhật trạng thái lịch sau đó.
+
+Console production sẽ có các log:
+
+- `[Firebase] initialized`
+- `[HOME] Firebase core load`
+- `[HOME] Firebase data ready`
+- `[HOME] bookings window load`

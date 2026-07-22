@@ -1,6 +1,6 @@
 {
   "name": "homestay-phu-nhuan-fullstack",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node server.mjs",
-    "test": "node --test",
+    "test": "node --test tests/*.test.js",
     "check": "node --check api/public-config.js && node --check api/meta-webhook.js && node --check api/web-chat.js && node --check api/chatbot-health.js && node --check api/chatbot-debug-availability.js && node --check api/chatbot-test-alert.js && node --check lib/conversation.js && node --check lib/availability.js && node --check lib/pricing.js && node --check lib/date-time.js && node --check lib/conversation-store.js && node --check lib/conversation-control.js && node --check lib/messenger.js && node --check lib/owner-notifier.js && node --check assets/ai-chat-widget.js",
     "start": "node server.mjs",
     "dev:vercel": "vercel dev --listen 3000"

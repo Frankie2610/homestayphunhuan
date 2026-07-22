@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Firebase HOME Debug</title>
+  <style>
+    :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #202235; background: #f4f5fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; }
+    main { width: min(980px, 100%); margin: auto; }
+    h1 { margin: 0 0 8px; }
+    p { line-height: 1.55; }
+    button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: #6f3ff5; color: #fff; font-weight: 750; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .summary { margin: 18px 0; padding: 14px 16px; border-radius: 14px; background: #fff; border: 1px solid #e2e5ef; }
+    .step { margin: 14px 0; padding: 16px; border: 1px solid #dfe3ec; border-left-width: 5px; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(23, 26, 45, .05); }
+    .step.pending { border-left-color: #8b95a7; }
+    .step.success { border-left-color: #1c9c63; }
+    .step.error { border-left-color: #d64545; }
+    .step.warning { border-left-color: #d59a16; }
+    pre { overflow: auto; white-space: pre-wrap; word-break: break-word; margin-bottom: 0; padding: 12px; border-radius: 10px; background: #111827; color: #f9fafb; font-size: 12px; line-height: 1.55; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Firebase HOME Debug</h1>
+    <p>Trang này chỉ đọc dữ liệu thật từ Firebase. Nó không tạo HOME mặc định và không ghi dữ liệu.</p>
+    <button id="runDebug" type="button">Chạy kiểm tra lại</button>
+    <div id="summary" class="summary">Chưa chạy.</div>
+    <div id="results"></div>
+  </main>
+
+  <script type="module">
+    import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+    import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+
+    const results = document.getElementById("results");
+    const summary = document.getElementById("summary");
+    const runButton = document.getElementById("runDebug");
+
+    function safeConfig(config = {}) {
+      let databaseHost = "";
+      try { databaseHost = new URL(config.databaseURL).hostname; } catch {}
+      return {
+        projectId: config.projectId || "",
+        authDomain: config.authDomain || "",
+        databaseHost,
+        storageBucket: config.storageBucket || "",
+        hasApiKey: Boolean(config.apiKey)
+      };
+    }
+
+    function addStep(title, state, data) {
+      const element = document.createElement("section");
+      element.className = `step ${state}`;
+      const heading = document.createElement("strong");
+      heading.textContent = title;
+      const output = document.createElement("pre");
+      output.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      element.append(heading, output);
+      results.appendChild(element);
+    }
+
+    function withTimeout(promise, timeoutMs, label) {
+      let timeoutId;
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`${label}_timeout_after_${timeoutMs}ms`)), timeoutMs);
+        })
+      ]).finally(() => clearTimeout(timeoutId));
+    }
+
+    async function runDebug() {
+      results.innerHTML = "";
+      summary.textContent = "Đang kiểm tra…";
+      runButton.disabled = true;
+      const startedAt = performance.now();
+
+      try {
+        const configStartedAt = performance.now();
+        const configResponse = await withTimeout(fetch(`/api/public-config?t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { accept: "application/json" }
+        }), 8000, "public_config");
+        const configText = await configResponse.text();
+        let configPayload;
+        try { configPayload = JSON.parse(configText); }
+        catch { throw new Error(`public-config_not_json_http_${configResponse.status}`); }
+
+        if (!configResponse.ok) {
+          addStep("1. /api/public-config", "error", { status: configResponse.status, payload: configPayload });
+          throw new Error(configPayload?.error || `public_config_http_${configResponse.status}`);
+        }
+
+        const { __diagnostics, ...firebaseConfig } = configPayload;
+        addStep("1. /api/public-config", "success", {
+          durationMs: Math.round(performance.now() - configStartedAt),
+          ...safeConfig(firebaseConfig),
+          diagnostics: __diagnostics || null
+        });
+
+        const databaseBaseUrl = String(firebaseConfig.databaseURL || "").replace(/\/+$/, "");
+        const restUrl = `${databaseBaseUrl}/homes.json?shallow=true&timeout=5s`;
+        const restStartedAt = performance.now();
+        const restResponse = await withTimeout(fetch(restUrl, { cache: "no-store" }), 8000, "homes_rest");
+        const restText = await restResponse.text();
+        addStep("2. REST đọc /homes", restResponse.ok ? "success" : "error", {
+          durationMs: Math.round(performance.now() - restStartedAt),
+          status: restResponse.status,
+          databaseHost: new URL(restUrl).hostname,
+          response: restText
+        });
+        if (!restResponse.ok) throw new Error(`homes_rest_http_${restResponse.status}`);
+
+        const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+        const database = getDatabase(app, firebaseConfig.databaseURL);
+        addStep("3. Firebase SDK init", "success", {
+          appName: app.name,
+          projectId: app.options.projectId,
+          databaseURL: app.options.databaseURL
+        });
+
+        const homesStartedAt = performance.now();
+        const homesSnapshot = await withTimeout(get(ref(database, "homes")), 10000, "homes_sdk_read");
+        const rawHomes = homesSnapshot.val();
+        addStep("4. Firebase SDK đọc /homes", homesSnapshot.exists() ? "success" : "error", {
+          durationMs: Math.round(performance.now() - homesStartedAt),
+          exists: homesSnapshot.exists(),
+          dataType: Array.isArray(rawHomes) ? "array" : typeof rawHomes,
+          keys: rawHomes && typeof rawHomes === "object" ? Object.keys(rawHomes) : []
+        });
+        if (!homesSnapshot.exists()) throw new Error("homes_node_empty");
+
+        const normalizedHomes = Array.isArray(rawHomes)
+          ? rawHomes.filter(Boolean)
+          : Object.entries(rawHomes).filter(([, home]) => Boolean(home)).map(([firebaseKey, home]) => ({ firebaseKey, ...home }));
+        addStep("5. Chuẩn hóa HOME", normalizedHomes.length ? "success" : "error", {
+          count: normalizedHomes.length,
+          ids: normalizedHomes.map(home => home.firebaseKey || home.id || home.code || home.title || home.name || "unknown"),
+          fields: normalizedHomes.slice(0, 3).map(home => Object.keys(home))
+        });
+        if (!normalizedHomes.length) throw new Error("homes_normalized_empty");
+
+        summary.textContent = `THÀNH CÔNG: đọc được ${normalizedHomes.length} HOME trong ${Math.round(performance.now() - startedAt)}ms.`;
+      } catch (error) {
+        console.error(error);
+        addStep("Kết luận lỗi", "error", {
+          name: error?.name,
+          code: error?.code,
+          message: error?.message
+        });
+        summary.textContent = `LỖI: ${error?.message || error}`;
+      } finally {
+        runButton.disabled = false;
+      }
+    }
+
+    runButton.addEventListener("click", runDebug);
+    runDebug();
+  </script>
+</body>
+</html>

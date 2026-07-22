@@ -18603,7 +18603,7 @@
         }
     </style>
 
-    <link rel="stylesheet" href="/assets/ai-chat-widget.css?v=20260722-final3">
+    <link rel="stylesheet" href="/assets/ai-chat-widget.css?v=20260722-final6">
 </head>
 
 <body>
@@ -20119,7 +20119,98 @@
         </section>
     </div>
 
-    <script src="/assets/ai-chat-widget.js?v=20260722-final4" defer></script>
+    <style id="firebase-home-diagnostics-style">
+        .rooms-firebase-error {
+            grid-column: 1 / -1;
+            display: grid;
+            justify-items: center;
+            gap: 10px;
+            padding: 28px 20px;
+            border: 1px solid rgba(190, 70, 70, .22);
+            border-radius: 18px;
+            background: #fff7f7;
+            color: #6f2525;
+            text-align: center;
+        }
+
+        .rooms-firebase-error strong {
+            font-size: 1rem;
+        }
+
+        .rooms-firebase-error span {
+            max-width: 680px;
+            line-height: 1.55;
+        }
+
+        .rooms-firebase-error button {
+            min-height: 42px;
+            padding: 0 18px;
+            border: 0;
+            border-radius: 999px;
+            background: #6f3ff5;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .room-card-data-ready {
+            animation: firebaseHomeCardIn .32s ease both;
+        }
+
+        .firebase-live-badge {
+            background: rgba(28, 156, 99, .92) !important;
+            color: #fff !important;
+        }
+
+        .room-slot-loading-live .room-slot-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .room-slot-loading-live.is-error {
+            background: #fff8e8;
+            border-color: rgba(200, 139, 15, .22);
+        }
+
+        .room-inline-spinner {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 14px;
+            border: 2px solid rgba(111, 63, 245, .18);
+            border-top-color: #6f3ff5;
+            border-radius: 50%;
+            animation: firebaseHomeSpin .7s linear infinite;
+        }
+
+        .room-image-empty {
+            min-height: 230px;
+            background: linear-gradient(135deg, #f2efff, #f9f7ff);
+        }
+
+        .price-pending {
+            font-size: .9rem !important;
+            opacity: .72;
+        }
+
+        @keyframes firebaseHomeSpin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes firebaseHomeCardIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 768px) {
+            .rooms-firebase-error {
+                padding: 22px 16px;
+                border-radius: 15px;
+            }
+        }
+    </style>
+
+    <script src="/assets/ai-chat-widget.js?v=20260722-final6" defer></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
         import {
@@ -20136,15 +20227,92 @@
             runTransaction
         } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
 
-        const firebaseConfigResponse = await fetch("/api/public-config", {
-            headers: { "accept": "application/json" }
-        });
-        if (!firebaseConfigResponse.ok) {
-            throw new Error(`Không tải được Firebase public config (${firebaseConfigResponse.status})`);
+        async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort("request_timeout"), timeoutMs);
+
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                const text = await response.text();
+                let payload = null;
+
+                try {
+                    payload = text ? JSON.parse(text) : null;
+                } catch {
+                    throw new Error(`Response từ ${url} không phải JSON (HTTP ${response.status})`);
+                }
+
+                if (!response.ok) {
+                    const details = Array.isArray(payload?.missing) && payload.missing.length
+                        ? `: ${payload.missing.join(", ")}`
+                        : "";
+                    throw new Error(`${payload?.error || `HTTP ${response.status}`}${details}`);
+                }
+
+                return payload;
+            } finally {
+                window.clearTimeout(timeoutId);
+            }
         }
-        const firebaseConfig = await firebaseConfigResponse.json();
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
+
+        function showFirebaseBootstrapError(error) {
+            console.error("[Firebase] Bootstrap failed", error);
+            window.__firebaseBootstrapError = {
+                name: error?.name || "Error",
+                message: error?.message || String(error || "firebase_bootstrap_failed")
+            };
+
+            const grid = document.getElementById("roomGrid");
+            if (grid) {
+                grid.classList.remove("loading-skeleton");
+                grid.innerHTML = `
+                    <div class="rooms-firebase-error" role="alert">
+                        <strong>Không tải được dữ liệu HOME từ Firebase.</strong>
+                        <span>${escapeHTML(error?.message || "Vui lòng kiểm tra cấu hình Firebase và tải lại trang.")}</span>
+                        <button type="button" onclick="window.location.reload()">Tải lại trang</button>
+                    </div>
+                `;
+            }
+
+            setHeroConversionPriceState?.("unavailable", "Chưa tải được giá");
+        }
+
+        let firebaseConfig;
+        let app;
+        let db;
+
+        try {
+            console.time("[Firebase] public-config");
+            const publicConfigPayload = await fetchJsonWithTimeout(
+                `/api/public-config?t=${Date.now()}`,
+                {
+                    cache: "no-store",
+                    headers: { accept: "application/json" }
+                },
+                8000
+            );
+            console.timeEnd("[Firebase] public-config");
+
+            const { __diagnostics, ...sdkConfig } = publicConfigPayload || {};
+            firebaseConfig = sdkConfig;
+            app = initializeApp(firebaseConfig);
+            db = getDatabase(app, firebaseConfig.databaseURL);
+
+            window.__firebasePublicDiagnostics = {
+                projectId: firebaseConfig.projectId,
+                databaseURL: firebaseConfig.databaseURL,
+                databaseHost: __diagnostics?.databaseHost || "",
+                initialized: true
+            };
+
+            console.log("[Firebase] initialized", window.__firebasePublicDiagnostics);
+        } catch (error) {
+            showFirebaseBootstrapError(error);
+            throw error;
+        }
 
         /* =========================
            CUSTOMER COMBO TRACKING
@@ -20893,6 +21061,102 @@
             return list.map(name => `
                 <span>${escapeHTML(name)}</span>
             `).join("");
+        }
+
+        function renderHomesFromFirebaseWhileAvailabilityLoads(message = "Đang kiểm tra lịch trống...") {
+            const grid = document.getElementById("roomGrid");
+            if (!grid) return;
+
+            const entries = Object.entries(homes || {}).filter(([, home]) => Boolean(home));
+            grid.classList.remove("loading-skeleton");
+
+            if (!entries.length) {
+                grid.innerHTML = `
+                    <div class="rooms-firebase-error" role="alert">
+                        <strong>Firebase chưa có dữ liệu HOME.</strong>
+                        <span>Kiểm tra node <code>/homes</code>, đúng project và đúng Realtime Database URL.</span>
+                    </div>
+                `;
+                return;
+            }
+
+            const cards = entries.map(([key, home], index) => {
+                const packageInfo = getMainPackage(home);
+                const detailRouteKey = Object.entries(roomMap || {})
+                    .find(([, mappedHomeId]) => mappedHomeId === key)?.[0] || home.title || key;
+                const imageUrl = optimizeCloudinary(home.coverImage || home.image || home.thumbnail || "");
+                const imageAttrs = index === 0
+                    ? 'loading="eager" fetchpriority="high"'
+                    : 'loading="lazy" fetchpriority="low"';
+
+                return `
+                    <div class="room-card room-card-data-ready" data-home-id="${escapeHTML(key)}">
+                        <a href="/${encodeURIComponent(detailRouteKey)}"
+                           class="room-image-wrap"
+                           data-home-id="${escapeHTML(key)}"
+                           onclick="openHomeDetailFromCard(event, this)"
+                           onpointerenter="warmHomeDetailFromEl(this)"
+                           ontouchstart="warmHomeDetailFromEl(this)">
+                            ${imageUrl
+                                ? `<img src="${imageUrl}" class="room-image" ${imageAttrs} decoding="async" alt="${escapeHTML(home.name || home.title || key)}">`
+                                : `<div class="room-image room-image-empty" aria-label="HOME chưa có ảnh"></div>`
+                            }
+                            <div class="room-badge firebase-live-badge">Dữ liệu Firebase</div>
+                        </a>
+
+                        <div class="room-content">
+                            <div class="room-top">
+                                <h3 class="room-title">${escapeHTML(home.name || home.title || key)}</h3>
+                                <div class="room-rating">⭐ 4.9</div>
+                            </div>
+
+                            <div class="room-features">${renderAmenityChips(home, 4)}</div>
+                            <p class="room-desc">${escapeHTML(home.description || "")}</p>
+
+                            <div class="room-slot-row room-slot-loading-live" aria-live="polite">
+                                <div class="room-slot-text">
+                                    <span class="room-inline-spinner" aria-hidden="true"></span>
+                                    ${escapeHTML(message)}
+                                </div>
+                            </div>
+
+                            <div class="room-bottom room-bottom-v32">
+                                <div class="room-price">
+                                    ${Number(packageInfo.price || 0) > 0
+                                        ? `<span class="price">${Number(packageInfo.price).toLocaleString("vi-VN")}đ</span><span class="night">/ ${packageInfo.hours}H</span>`
+                                        : `<span class="price price-pending">Đang tải giá</span>`
+                                    }
+                                </div>
+
+                                <a href="/${encodeURIComponent(detailRouteKey)}"
+                                   class="room-btn"
+                                   data-home-id="${escapeHTML(key)}"
+                                   onclick="openHomeDetailFromCard(event, this)"
+                                   onpointerenter="warmHomeDetailFromEl(this)"
+                                   ontouchstart="warmHomeDetailFromEl(this)">
+                                    Xem phòng
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            grid.innerHTML = cards.join("");
+            grid.__lastRoomHTML = "";
+
+            console.log("[HOME] Render Firebase cards before availability", {
+                count: entries.length,
+                keys: entries.map(([key]) => key)
+            });
+        }
+
+        function renderHomesAvailabilityError(error) {
+            const text = error?.message || "Không tải được lịch trống. Dữ liệu HOME vẫn lấy từ Firebase.";
+            document.querySelectorAll(".room-slot-loading-live").forEach(element => {
+                element.classList.add("is-error");
+                element.innerHTML = `<div class="room-slot-text">⚠️ ${escapeHTML(text)}</div>`;
+            });
         }
 
         function ceilMinuteToHour(minute) {
@@ -23501,56 +23765,98 @@ onclick="selectDate('${key}')"
 
         }
 
+        function withFirebaseTimeout(promise, label, timeoutMs = 10000) {
+            let timeoutId;
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => {
+                    timeoutId = window.setTimeout(() => {
+                        reject(new Error(`${label}_timeout_after_${timeoutMs}ms`));
+                    }, timeoutMs);
+                })
+            ]).finally(() => window.clearTimeout(timeoutId));
+        }
+
+        function buildRoomMapFromFirebaseHomes(sourceHomes) {
+            const nextRoomMap = {};
+
+            Object.entries(sourceHomes || {}).forEach(([firebaseId, home], index) => {
+                const candidates = [
+                    firebaseId,
+                    home?.code,
+                    home?.roomCode,
+                    home?.homeCode,
+                    home?.id,
+                    home?.title,
+                    home?.name
+                ].map(item => String(item || "").trim().toUpperCase());
+
+                const canonical = candidates.find(item => /^HOME\s*[1-9]\d*$/.test(item));
+                const normalized = canonical
+                    ? canonical.replace(/\s+/g, "")
+                    : `HOME${index + 1}`;
+
+                nextRoomMap[normalized] = firebaseId;
+            });
+
+            return nextRoomMap;
+        }
+
+        function renderFirebaseHomesLoadError(error) {
+            const grid = document.getElementById("roomGrid");
+            if (!grid) return;
+
+            grid.classList.remove("loading-skeleton");
+            grid.innerHTML = `
+                <div class="rooms-firebase-error" role="alert">
+                    <strong>Không tải được danh sách HOME từ Firebase.</strong>
+                    <span>${escapeHTML(error?.message || "Kiểm tra databaseURL, Rules và node /homes.")}</span>
+                    <button type="button" onclick="window.location.reload()">Tải lại</button>
+                </div>
+            `;
+        }
+
         async function load() {
+            const path = decodeURIComponent(window.location.pathname)
+                .replace(/\/$/, "") || "/";
 
-            const [
-                homeSnap,
-                pricingSnap,
-                bookingSnap
-            ] = await Promise.all([
+            console.time("[HOME] Firebase core load");
 
-                get(ref(db, "homes")),
-
-                get(ref(db, "roomPricing")),
-
-                // V9: không tải toàn bộ /bookings trong lượt đầu nữa.
-                Promise.resolve({ exists: () => false, val: () => ({}) })
-
+            const [homeResult, pricingResult] = await Promise.allSettled([
+                withFirebaseTimeout(get(ref(db, "homes")), "homes_read", 10000),
+                withFirebaseTimeout(get(ref(db, "roomPricing")), "room_pricing_read", 10000)
             ]);
 
-            // =====================
-            // HOMES
-            // =====================
-
-            if (homeSnap.exists()) {
-
-                homes = homeSnap.val();
-
-                roomMap = {};
-
-                Object.keys(homes)
-                    .forEach((id, index) => {
-
-                        roomMap[`HOME${index + 1}`] = id;
-
-                    });
-
-                window.homes = homes;
-                window.__h3cnHomes = homes;
-                window.roomMap = roomMap;
+            if (homeResult.status === "rejected") {
+                renderFirebaseHomesLoadError(homeResult.reason);
+                throw homeResult.reason;
             }
 
-            // =====================
-            // ROOM PRICING
-            // =====================
+            const homeSnap = homeResult.value;
+            if (!homeSnap.exists()) {
+                const error = new Error("Node /homes không tồn tại hoặc đang rỗng trong Realtime Database");
+                renderFirebaseHomesLoadError(error);
+                throw error;
+            }
 
-            if (pricingSnap.exists()) {
+            homes = homeSnap.val() || {};
+            roomMap = buildRoomMapFromFirebaseHomes(homes);
+            window.homes = homes;
+            window.__h3cnHomes = homes;
+            window.roomMap = roomMap;
 
-                roomPricing =
-                    pricingSnap.val() || {};
+            if (pricingResult.status === "fulfilled" && pricingResult.value.exists()) {
+                roomPricing = pricingResult.value.val() || {};
                 window.roomPricing = roomPricing;
-
+            } else if (pricingResult.status === "rejected") {
+                console.warn("[HOME] roomPricing load failed; continue with pricing inside /homes", pricingResult.reason);
             }
+
+            rooms = Object.entries(homes).map(([id, home]) => ({
+                id,
+                name: home?.title || home?.name || id
+            }));
+            currentRoom = rooms[0]?.id || currentRoom;
 
             updateHeroConversionPrice();
 
@@ -23558,31 +23864,50 @@ onclick="selectDate('${key}')"
                 window.initTopBookingSearch();
             }
 
-            // =====================
-            // BOOKINGS - V10 MONTHLY WINDOW
-            // Đọc bookingsByMonth theo các tháng nằm trong cửa sổ 2 tuần.
-            // =====================
-            await loadBookingsWindow({
-                baseDate: toDateKey(new Date()),
-                days: BOOKING_WINDOW_DAYS,
-                merge: false,
-                allowLegacyFallback: false
+            console.timeEnd("[HOME] Firebase core load");
+            console.log("[HOME] Firebase data ready", {
+                projectId: firebaseConfig?.projectId,
+                databaseURL: firebaseConfig?.databaseURL,
+                homeCount: Object.keys(homes).length,
+                homeKeys: Object.keys(homes),
+                pricingLoaded: Boolean(Object.keys(roomPricing || {}).length)
             });
 
-            // =====================
-            // BOOKINGS
-            // =====================
-            // Không đọc legacy /bookings nữa. Mọi dữ liệu booking của trang khách
-            // đã được normalize từ bookingsByMonth qua loadBookingsWindow().
+            // Trang chủ phải hiển thị card ngay sau khi /homes tải xong.
+            // Lịch booking được tải tiếp ở nền của cùng hàm và chỉ cập nhật phần trạng thái.
+            if (path === "/") {
+                renderHomesFromFirebaseWhileAvailabilityLoads();
+                renderTabs();
+                hideLoading();
+            }
+
+            let bookingLoadError = null;
+            console.time("[HOME] bookings window load");
+            try {
+                await withFirebaseTimeout(
+                    loadBookingsWindow({
+                        baseDate: toDateKey(new Date()),
+                        days: BOOKING_WINDOW_DAYS,
+                        merge: false,
+                        allowLegacyFallback: false
+                    }),
+                    "bookings_window_read",
+                    12000
+                );
+            } catch (error) {
+                bookingLoadError = error;
+                console.error("[HOME] bookings window load failed", error);
+            } finally {
+                console.timeEnd("[HOME] bookings window load");
+            }
+
+            if (path === "/" && bookingLoadError) {
+                renderHomesAvailabilityError(bookingLoadError);
+            }
 
             // =====================
             // URL ROUTING
             // =====================
-
-            const path =
-                decodeURIComponent(
-                    window.location.pathname
-                ).replace(/\/$/, "") || "/";
 
             // =====================
             // /lich-trong
@@ -23697,7 +24022,9 @@ onclick="selectDate('${key}')"
             currentRoom =
                 rooms[0]?.id;
 
-            renderRooms();
+            if (!bookingLoadError) {
+                await renderRooms();
+            }
             renderTabs();
         }
 

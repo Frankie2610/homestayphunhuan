@@ -46,6 +46,7 @@ parseEnvFile(".env");
 process.env.LOCAL_CHAT_SERVER = process.env.LOCAL_CHAT_SERVER || "true";
 
 const API_ROUTES = new Map([
+  ["/api/public-config", "./api/public-config.js"],
   ["/api/web-chat", "./api/web-chat.js"],
   ["/api/meta-webhook", "./api/meta-webhook.js"],
   ["/api/chatbot-health", "./api/chatbot-health.js"],
