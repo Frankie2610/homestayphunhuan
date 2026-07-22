@@ -14,3 +14,10 @@ Widget nhận phản hồi bằng streaming: câu trả lời được hiển th
 ## Deploy
 
 Các biến Firebase/Gemini/Meta vẫn phải có trong Vercel Project Settings. Không đưa `.env.local` lên Git hoặc vào file ZIP chia sẻ công khai.
+
+Firebase Admin chấp nhận một trong hai cách cấu hình:
+
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: toàn bộ nội dung JSON tải từ Firebase Service Accounts.
+- Hoặc bộ `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` và `FIREBASE_DATABASE_URL`.
+
+Nếu dùng `FIREBASE_PRIVATE_KEY`, chỉ dán giá trị PEM từ `-----BEGIN PRIVATE KEY-----` đến `-----END PRIVATE KEY-----`; không dán kèm tên trường `private_key`. Sau khi đổi Environment Variables, phải redeploy Production để deployment mới nhận giá trị.

@@ -378,6 +378,13 @@
           liveRegion.textContent = "HOME vừa gửi câu trả lời.";
         });
         deliveredMessages = Math.max(deliveredMessages, result.deliveredMessages);
+        if (result.doneEvent?.degraded) {
+          console.error("Website chatbot entered degraded mode", {
+            code: result.doneEvent.errorCode || "chat_processing_failed",
+            timedOut: result.doneEvent.timedOut === true,
+            processingMs: Number(result.doneEvent.processingMs || 0)
+          });
+        }
       } else {
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.ok !== true) {

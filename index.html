@@ -18616,7 +18616,7 @@
         }
     </style>
 
-    <link rel="stylesheet" href="/ai-chat-widget.css?v=20260722-6">
+    <link rel="stylesheet" href="/ai-chat-widget.css?v=20260722-7">
 </head>
 
 <body>
@@ -20127,13 +20127,15 @@
             runTransaction
         } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCH-D5mOViT1gVbL80hYmGigf3gdQ8neZg",
-            authDomain: "homestay3caynon-e00de.firebaseapp.com",
-            databaseURL: "https://homestay3caynon-e00de-default-rtdb.firebaseio.com",
-            projectId: "homestay3caynon-e00de",
-            storageBucket: "homestay3caynon-e00de.firebasestorage.app"
-        };
+        const firebaseConfigResponse = await fetch("/api/public-config", {
+            headers: { "accept": "application/json" },
+            cache: "no-store",
+            signal: AbortSignal.timeout(8000)
+        });
+        const firebaseConfig = await firebaseConfigResponse.json().catch(() => ({}));
+        if (!firebaseConfigResponse.ok || !firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.databaseURL) {
+            throw new Error(firebaseConfig.message || "Firebase public config chưa sẵn sàng.");
+        }
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
@@ -31922,7 +31924,7 @@ Mình muốn đặt phòng homestay.
         })();
     </script>
 
-    <script src="/ai-chat-widget.js?v=20260722-6" defer></script>
+    <script src="/ai-chat-widget.js?v=20260722-7" defer></script>
 </body>
 
 </html>

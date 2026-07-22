@@ -1,9 +1,23 @@
-import { getAdminDatabase } from "../lib/firebase-admin.js";
+import {
+  getAdminDatabase,
+  getFirebaseAdminEnvironmentStatus
+} from "../lib/firebase-admin.js";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+
+function timeoutAfter(ms) {
+  return new Promise((_, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error("Firebase health check quá thời gian");
+      error.code = "FIREBASE_HEALTH_TIMEOUT";
+      reject(error);
+    }, ms);
+    timer.unref?.();
   });
 }
 
@@ -13,16 +27,21 @@ export async function GET(request) {
   if (secret && provided !== secret) return json({ ok: false, error: "forbidden" }, 403);
 
   try {
+    const environment = getFirebaseAdminEnvironmentStatus();
     const db = getAdminDatabase();
-    const [snap, pricingSnap, settingsSnap] = await Promise.all([
-      db.ref("homes").limitToFirst(1).get(),
-      db.ref("roomPricing").limitToFirst(1).get(),
-      db.ref("messengerBot/settings").get()
+    const [snap, pricingSnap, settingsSnap] = await Promise.race([
+      Promise.all([
+        db.ref("homes").limitToFirst(1).get(),
+        db.ref("roomPricing").limitToFirst(1).get(),
+        db.ref("messengerBot/settings").get()
+      ]),
+      timeoutAfter(8_000)
     ]);
     const settings = settingsSnap.val() || {};
     return json({
       ok: true,
       firebase: true,
+      environment,
       homesConfigured: snap.exists(),
       roomPricingConfigured: pricingSnap.exists(),
       pricingReadsLiveFromFirebase: true,
@@ -43,6 +62,11 @@ export async function GET(request) {
       timestamp: Date.now()
     });
   } catch (error) {
-    return json({ ok: false, firebase: false, error: error.message }, 500);
+    return json({
+      ok: false,
+      firebase: false,
+      code: error?.code || "FIREBASE_HEALTH_FAILED",
+      error: error?.message || "Firebase health check failed"
+    }, 500);
   }
 }

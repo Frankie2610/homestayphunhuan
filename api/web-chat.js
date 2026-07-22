@@ -99,7 +99,15 @@ function processingTimeout() {
   });
 }
 
-function fallbackMessages(payload) {
+function fallbackMessages(payload, errorCode = "") {
+  if (errorCode && errorCode !== "WEB_CHAT_PROCESSING_TIMEOUT") {
+    return [{
+      type: "text",
+      text: "Chatbot chưa kết nối được dữ liệu lúc này. Bạn thử lại sau ít giây hoặc nhắn trực tiếp cho HOME giúp mình nhé.",
+      quickReplies: [{ title: "Thử lại", payload: "START|AVAILABILITY" }]
+    }];
+  }
+
   if (payload === "START|AVAILABILITY") {
     return [{
       type: "text",
@@ -127,12 +135,28 @@ function fallbackMessages(payload) {
   }];
 }
 
+function safeProcessingErrorCode(error) {
+  const code = String(error?.code || "").trim();
+  const message = String(error?.message || "");
+  if (code === "WEB_CHAT_PROCESSING_TIMEOUT") return code;
+  if (code.startsWith("FIREBASE_")) return code;
+  if (/Failed to parse private key|private key/i.test(message)) {
+    return "FIREBASE_PRIVATE_KEY_INVALID";
+  }
+  if (/Thiếu biến môi trường FIREBASE_/i.test(message)) {
+    return "FIREBASE_ENV_MISSING";
+  }
+  return "CHAT_PROCESSING_FAILED";
+}
+
 function reportProcessingError(psid, eventId, error, processingMs) {
   const timedOut = error?.code === "WEB_CHAT_PROCESSING_TIMEOUT";
+  const errorCode = safeProcessingErrorCode(error);
   console.error("Website chatbot processing error", {
     eventId,
     processingMs,
     timedOut,
+    errorCode,
     error: error?.message || String(error)
   });
 
@@ -144,7 +168,7 @@ function reportProcessingError(psid, eventId, error, processingMs) {
     error: String(error?.message || error || "unknown_error").slice(0, 500)
   }).catch(() => {});
 
-  return timedOut;
+  return { timedOut, errorCode };
 }
 
 function streamEvent(controller, encoder, event) {
@@ -211,12 +235,17 @@ export function createStreamingResponse({
         })
         .catch(error => {
           const processingMs = Date.now() - startedAt;
-          const timedOut = reportProcessingError(psid, eventId, error, processingMs);
+          const { timedOut, errorCode } = reportProcessingError(
+            psid,
+            eventId,
+            error,
+            processingMs
+          );
 
           // If a reply was already streamed, do not add a duplicate warning.
           // Otherwise return a useful fallback before Vercel reaches its limit.
           if (!deliveredMessages) {
-            for (const message of fallbackMessages(payload)) {
+            for (const message of fallbackMessages(payload, errorCode)) {
               deliveredMessages += 1;
               sendEvent({ type: "message", message });
             }
@@ -226,6 +255,7 @@ export function createStreamingResponse({
             ok: true,
             degraded: true,
             timedOut,
+            errorCode,
             sessionId,
             processingMs,
             deliveredMessages
@@ -358,7 +388,7 @@ export async function POST(request) {
     }, 200, { "server-timing": `chat;dur=${processingMs}` });
   } catch (error) {
     const processingMs = Date.now() - startedAt;
-    const timedOut = reportProcessingError(psid, eventId, error, processingMs);
+    const { timedOut, errorCode } = reportProcessingError(psid, eventId, error, processingMs);
 
     if (timedOut) {
       return json({
@@ -366,7 +396,8 @@ export async function POST(request) {
         degraded: true,
         sessionId,
         processingMs,
-        messages: fallbackMessages(payload)
+        errorCode,
+        messages: fallbackMessages(payload, errorCode)
       }, 200, { "server-timing": `chat;dur=${processingMs};desc=timeout` });
     }
 
