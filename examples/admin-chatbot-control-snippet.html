@@ -1,0 +1,14 @@
+<!-- 1) Chèn vào tab/section quản trị Messenger -->
+<link rel="stylesheet" href="./examples/admin-chatbot-control.css">
+<section id="messengerBotControl"></section>
+
+<!-- 2) Chạy sau khi trang admin đã khởi tạo Firebase `db` và `auth` -->
+<script type="module">
+  import { mountMessengerBotControl } from "./examples/admin-chatbot-control.js";
+
+  mountMessengerBotControl({
+    db,
+    container: "#messengerBotControl",
+    actor: () => auth.currentUser?.email || "admin_web"
+  });
+</script>

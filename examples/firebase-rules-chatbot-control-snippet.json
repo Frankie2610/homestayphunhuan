@@ -1,0 +1,23 @@
+{
+  "messengerBot": {
+    ".read": "auth != null",
+    "controls": {
+      "$psid": {
+        ".write": "auth != null"
+      }
+    },
+    "settings": {
+      ".write": "auth != null"
+    },
+    "controlAudit": {
+      "$psid": {
+        ".write": "auth != null"
+      }
+    },
+    "alerts": {
+      "$alertId": {
+        ".write": "auth != null"
+      }
+    }
+  }
+}

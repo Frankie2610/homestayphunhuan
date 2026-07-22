@@ -1,0 +1,28 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm install --no-audit --no-fund",
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/privacy-policy", "destination": "/privacy-policy.html" },
+    { "source": "/data-deletion", "destination": "/data-deletion.html" },
+    { "source": "/terms-of-service", "destination": "/terms-of-service.html" },
+    { "source": "/lich-trong", "destination": "/index.html" },
+    { "source": "/hinh-anh", "destination": "/index.html" },
+    { "source": "/gioi-thieu", "destination": "/index.html" },
+    { "source": "/danh-gia", "destination": "/index.html" },
+    { "source": "/HOME1", "destination": "/index.html" },
+    { "source": "/HOME2", "destination": "/index.html" },
+    { "source": "/HOME3", "destination": "/index.html" },
+    { "source": "/HOME4", "destination": "/index.html" },
+    { "source": "/HOME5", "destination": "/index.html" },
+    { "source": "/HOME6", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/web-chat.js": { "maxDuration": 30 },
+    "api/meta-webhook.js": { "maxDuration": 10 },
+    "api/chatbot-health.js": { "maxDuration": 10 },
+    "api/chatbot-debug-availability.js": { "maxDuration": 10 },
+    "api/chatbot-test-alert.js": { "maxDuration": 10 }
+  }
+}
