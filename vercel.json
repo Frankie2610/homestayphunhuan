@@ -1,22 +1,27 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "cleanUrls": true,
+  "framework": null,
+  "buildCommand": null,
+  "installCommand": "",
+  "outputDirectory": ".",
   "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/privacy-policy",
+      "destination": "/privacy-policy.html"
+    },
+    {
+      "source": "/data-deletion",
+      "destination": "/data-deletion.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
   "functions": {
     "api/*.js": {
-      "maxDuration": 60
+      "maxDuration": 10
     }
-  },
-  "rewrites": [
-    { "source": "/lich-trong", "destination": "/index.html" },
-    { "source": "/hinh-anh", "destination": "/index.html" },
-    { "source": "/gioi-thieu", "destination": "/index.html" },
-    { "source": "/privacy-policy", "destination": "/index.html" },
-    { "source": "/HOME1", "destination": "/index.html" },
-    { "source": "/HOME2", "destination": "/index.html" },
-    { "source": "/HOME3", "destination": "/index.html" },
-    { "source": "/HOME4", "destination": "/index.html" },
-    { "source": "/HOME5", "destination": "/index.html" },
-    { "source": "/HOME6", "destination": "/index.html" }
-  ]
+  }
 }
