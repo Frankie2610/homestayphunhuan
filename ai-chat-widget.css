@@ -419,7 +419,7 @@
   color: var(--web-chat-ink);
   background: #fbf8f8;
   font: inherit;
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.5;
   transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
 }
@@ -519,8 +519,19 @@
   }
 
   .web-chat-panel {
-    bottom: 68px;
-    height: min(540px, calc(100dvh - 190px));
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    width: min(420px, calc(100vw - 32px));
+    height: min(620px, calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+    transform: translate(-50%, calc(-50% + 14px)) scale(0.97);
+    transform-origin: center center;
+  }
+
+  .web-chat-widget.is-open .web-chat-panel {
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 
@@ -551,13 +562,23 @@
 
   .web-chat-panel {
     position: fixed;
-    left: 8px;
-    right: 8px;
-    bottom: calc(8px + env(safe-area-inset-bottom));
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
     width: calc(100vw - 16px);
-    height: min(680px, calc(100dvh - 16px - env(safe-area-inset-bottom)));
+    height: min(680px, calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
     border-radius: 21px;
-    transform-origin: left bottom;
+    transform: translate(-50%, calc(-50% + 14px)) scale(0.97);
+    transform-origin: center center;
+  }
+
+  .web-chat-widget.is-open .web-chat-panel {
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  .web-chat-input {
+    font-size: 16px !important;
   }
 
   .web-chat-header {
@@ -598,11 +619,12 @@
 
 @media (max-width: 360px) {
   .web-chat-panel {
-    left: 5px;
-    right: 5px;
-    bottom: calc(5px + env(safe-area-inset-bottom));
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
     width: calc(100vw - 10px);
-    height: min(650px, calc(100dvh - 10px - env(safe-area-inset-bottom)));
+    height: min(650px, calc(100dvh - 10px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
     border-radius: 18px;
   }
 

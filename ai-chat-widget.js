@@ -247,13 +247,29 @@
     }, { side: "bot" });
   }
 
+
+  function canUseDesktopAutoFocus() {
+    return Boolean(window.matchMedia?.("(hover: hover) and (pointer: fine)").matches);
+  }
+
+  function focusInputOnDesktop(delay = 0) {
+    if (!canUseDesktopAutoFocus()) return;
+    window.setTimeout(() => {
+      try {
+        input.focus({ preventScroll: true });
+      } catch {
+        input.focus();
+      }
+    }, delay);
+  }
+
   function setOpen(open) {
     root.classList.toggle("is-open", Boolean(open));
     launcher.setAttribute("aria-expanded", String(Boolean(open)));
     panel.setAttribute("aria-hidden", String(!open));
     if (open) {
       badge.classList.remove("is-unread");
-      window.setTimeout(() => input.focus({ preventScroll: true }), 220);
+      focusInputOnDesktop(220);
       scrollToLatest();
     }
   }
@@ -432,7 +448,7 @@
       window.clearTimeout(slowHintTimeout);
       hideTyping();
       setBusy(false);
-      input.focus({ preventScroll: true });
+      focusInputOnDesktop();
     }
   }
 
